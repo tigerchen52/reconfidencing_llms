@@ -13,7 +13,6 @@ __pycache__/
 .Python
 retreat/
 build/
-result/
 backup/
 data/
 glibc-2.29/
