@@ -17,7 +17,6 @@ __pycache__/
 .Python
 retreat/
 build/
-result/
 backup/
 data/
 glibc-2.29/
@@ -30,6 +29,7 @@ lib/
 lib64/
 parts/
 sdist/
+log/
 var/
 wheels/
 share/python-wheels/

@@ -72,6 +72,38 @@ def get_father():
         wf.write(head+"\t"+tag+"\t"+date+"\n")
 
 
+def get_music_composer():
+    # music_entities = set()
+    # for line in open("/data/parietal/store3/soda/lihu/yago_4/alternate_name_type.txt", encoding="utf8"):
+    #     row = line.strip().split("\t")
+    #     if "MusicComposition" not in row[1]:continue
+    #     head, tag = get_name(row[0]), get_name(row[1])
+    #     music_entities.add(head)
+    # print("music entity = {a}".format(a=len(music_entities)))
+    wf = open("/data/parietal/store3/soda/lihu/code/hallucination/benchmark/output/music.txt", "w", encoding="utf8")
+    for line in open("/data/parietal/store3/soda/lihu/yago_4/yago-wd-facts.nt", encoding="utf8"):
+        row = line.strip().split("\t")
+        if "composer" not in row[1]:continue
+   
+        head, tag = get_name(row[0]), get_name(row[1])
+        #if head not in music_entities:continue
+        print(head, tag)
+        wf.write(head+"\n")
+        wf.flush()
+        
+def get_organization_founder():
+    wf = open("/data/parietal/store3/soda/lihu/code/hallucination/benchmark/output/organization.txt", "w", encoding="utf8")
+    for line in open("/data/parietal/store3/soda/lihu/yago_4/yago-wd-facts.nt", encoding="utf8"):
+        row = line.strip().split("\t")
+        if "founder" not in row[1]:continue
+   
+        head, tag = get_name(row[0]), get_name(row[1])
+        #if head not in music_entities:continue
+        print(head, tag)
+        wf.write(head+"\n")
+        wf.flush()
+        
+
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
@@ -113,4 +145,5 @@ if __name__ == "__main__":
     #get_birth_date()
     #get_birth_place()
     #get_father()
-    generate_name_by_backlink()
+    #generate_name_by_backlink()
+    get_organization_founder()
