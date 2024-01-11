@@ -11,10 +11,14 @@ import numpy as np
 from glest import GLEstimator
 import glest
 import torch
+from sktree.tree import ObliqueDecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier
 
 mistral_code_path = "/Users/alexandreperez/dev/rep/inr-phd-llm_reconf/mistral-src"
 sys.path.append(mistral_code_path)
 sys.path.append("/Users/alexandreperez/dev/rep/inr-phd-llm_reconf")
+
+from grouping.utils import save_path
 
 from prompt_template import RELATION_PROMPTS
 import matplotlib.pyplot as plt
@@ -406,6 +410,10 @@ def test_llama_forward_all():
 
 def test_tensors():
     task = "mistral7b_composer_nli"
+    strategy = "uniform"
+    n_bins = 15
+    binwise_fit = True
+    partitioner_name = "decision_tree"
 
     tensor_dirpath = Path(
         f"/data/parietal/store3/soda/lihu/code/hallucination/benchmark/tensors/{task}/"
@@ -468,12 +476,18 @@ def test_tensors():
     # )
     out_path.mkdir(exist_ok=True, parents=True)
 
-    partitioner = glest.Partitioner.from_name(
-        "decision_tree",
-        n_bins=15,
-        strategy="quantile",
-        binwise_fit=True,
-        random_state=0,
+    if partitioner_name == "decision_tree":
+        partitioner_est = DecisionTreeClassifier(random_state=0)
+
+    elif partitioner_name == "oblique_tree":
+        partitioner_est = ObliqueDecisionTreeClassifier(random_state=0)
+
+    partitioner = glest.Partitioner(
+        partitioner_est,
+        predict_method="apply",
+        n_bins=n_bins,
+        strategy=strategy,
+        binwise_fit=binwise_fit,
     )
     gle = GLEstimator(S, partitioner, random_state=0, verbose=10)
     gle.fit(X, y)
@@ -482,9 +496,13 @@ def test_tensors():
 
     metrics["source"] = str(json_path)
 
+    d = dict(s=strategy, b=binwise_fit, n=n_bins, p=partitioner_name)
+
     # Write metrics to text file
-    with open(out_path / "metrics.json", "w") as f:
+    filepath = save_path(str(out_path), ext="json", _name="metrics", **d)
+    with open(filepath, "w") as f:
         f.write(json.dumps(metrics))
 
     fig = gle.plot()
-    fig.savefig(out_path / "diagram.pdf", bbox_inches="tight", pad_inches=0.1)
+    filepath = save_path(str(out_path), ext="pdf", _name="diagram", **d)
+    fig.savefig(filepath, bbox_inches="tight", pad_inches=0.1)
