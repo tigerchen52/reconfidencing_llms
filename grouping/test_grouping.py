@@ -13,6 +13,7 @@ import glest
 import torch
 from sktree.tree import ObliqueDecisionTreeClassifier
 from sklearn.tree import DecisionTreeClassifier
+import pytest
 
 mistral_code_path = "/Users/alexandreperez/dev/rep/inr-phd-llm_reconf/mistral-src"
 sys.path.append(mistral_code_path)
@@ -408,12 +409,26 @@ def test_llama_forward_all():
         featurized_x.tofile(filename)
 
 
-def test_tensors():
+@pytest.mark.parametrize(
+    "binwise_fit",
+    [
+        False,
+        # True,
+    ],
+)
+@pytest.mark.parametrize(
+    "partitioner_name",
+    [
+        # "decision_tree",
+        "oblique_tree",
+    ],
+)
+def test_tensors(binwise_fit, partitioner_name):
     task = "mistral7b_composer_nli"
-    strategy = "uniform"
+    strategy = "quantile"
     n_bins = 15
-    binwise_fit = True
-    partitioner_name = "decision_tree"
+    # binwise_fit = True
+    # partitioner_name = "oblique_tree"
 
     tensor_dirpath = Path(
         f"/data/parietal/store3/soda/lihu/code/hallucination/benchmark/tensors/{task}/"
@@ -488,6 +503,7 @@ def test_tensors():
         n_bins=n_bins,
         strategy=strategy,
         binwise_fit=binwise_fit,
+        verbose=10,
     )
     gle = GLEstimator(S, partitioner, random_state=0, verbose=10)
     gle.fit(X, y)
