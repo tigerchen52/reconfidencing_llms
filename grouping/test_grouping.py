@@ -419,14 +419,15 @@ def test_llama_forward_all():
 @pytest.mark.parametrize(
     "partitioner_name",
     [
-        # "decision_tree",
-        "oblique_tree",
+        "decision_tree",
+        # "oblique_tree",
     ],
 )
 def test_tensors(binwise_fit, partitioner_name):
     task = "mistral7b_composer_nli"
     strategy = "quantile"
     n_bins = 15
+    shuffle = False
     # binwise_fit = True
     # partitioner_name = "oblique_tree"
 
@@ -480,10 +481,15 @@ def test_tensors(binwise_fit, partitioner_name):
         # print(tensor_path, tensor.shape)
 
     X = torch.stack(tensors, dim=0)
+    X = X.numpy()
     print(X.shape)
 
     S = df["confidence"].values
     y = df["tag"].values
+
+    # if shuffle:
+    #     rng = np.random.default_rng(0)
+    #     rng.shuffle(y)
 
     out_path = Path(f"./benchmark/gl/{task}/")
     # out_path = Path(
