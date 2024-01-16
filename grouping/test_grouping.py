@@ -14,6 +14,7 @@ import torch
 from sktree.tree import ObliqueDecisionTreeClassifier
 from sklearn.tree import DecisionTreeClassifier
 import pytest
+from typing import Tuple
 
 mistral_code_path = "/Users/alexandreperez/dev/rep/inr-phd-llm_reconf/mistral-src"
 sys.path.append(mistral_code_path)
@@ -409,6 +410,51 @@ def test_llama_forward_all():
         featurized_x.tofile(filename)
 
 
+def get_json_path(task: str) -> str:
+    return f"/data/parietal/store3/soda/lihu/code/hallucination/benchmark/result_tag/{task}_tag.json"
+
+
+def get_tensors(task: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    tensor_dirpath = Path(
+        f"/data/parietal/store3/soda/lihu/code/hallucination/benchmark/tensors/{task}/"
+    )
+    tensor_files = [file for file in tensor_dirpath.iterdir() if file.is_file()]
+    json_path = Path(get_json_path(task))
+
+    tensor_paths = {}
+    for file in tensor_files:
+        tensor_paths[file.stem] = str(file)
+
+    rows = []
+    for line in open(json_path, encoding="utf8"):
+        result = json.loads(line)
+        rows.append(result)
+        tensor_uuid = result["uuid"]
+        print(tensor_uuid)
+        assert tensor_uuid in tensor_paths, f"{tensor_uuid} not in {tensor_paths}"
+
+    df = pd.DataFrame(rows)
+    print(df)
+
+    # Load all the tensors in order
+    tensors = []
+    for uuid in tqdm.tqdm(df["uuid"]):
+        tensor_path = tensor_paths[uuid]
+        tensor: torch.Tensor = torch.load(tensor_path, map_location=torch.device("cpu"))
+        tensor = tensor.detach()
+        tensor = tensor.mean(1).squeeze()
+        tensors.append(tensor)
+        assert tensor.shape == (4096,)
+
+    X = torch.stack(tensors, dim=0)
+    X = X.numpy()
+
+    S = df["confidence"].values
+    y = df["tag"].values
+
+    return X, S, y
+
+
 @pytest.mark.parametrize(
     "binwise_fit",
     [
@@ -440,71 +486,14 @@ def test_tensors(binwise_fit, partitioner_name, task):
     # binwise_fit = True
     # partitioner_name = "oblique_tree"
 
-    tensor_dirpath = Path(
-        f"/data/parietal/store3/soda/lihu/code/hallucination/benchmark/tensors/{task}/"
-    )
-
-    # for file in path.iterdir():
-    #     print(file)
-
-    tensor_files = [file for file in tensor_dirpath.iterdir() if file.is_file()]
-
-    # print(path)
-    # print(len(tensor_files))
-
-    tensor_paths = {}
-
-    for file in tensor_files:
-        tensor_paths[file.stem] = str(file)
-
-    print(tensor_paths)
-
-    json_path = Path(
-        f"/data/parietal/store3/soda/lihu/code/hallucination/benchmark/result_tag/{task}_tag.json"
-    )
-
-    rows = []
-    for line in open(json_path, encoding="utf8"):
-        # print(line)
-        result = json.loads(line)
-        rows.append(result)
-
-        tensor_uuid = result["uuid"]
-
-        print(tensor_uuid)
-
-        assert tensor_uuid in tensor_paths, f"{tensor_uuid} not in {tensor_paths}"
-
-    df = pd.DataFrame(rows)
-
-    print(df)
-
-    # Load all the tensors in order
-    tensors = []
-    for uuid in tqdm.tqdm(df["uuid"]):
-        tensor_path = tensor_paths[uuid]
-        tensor: torch.Tensor = torch.load(tensor_path, map_location=torch.device("cpu"))
-        tensor = tensor.detach()
-        tensor = tensor.mean(1).squeeze()
-        tensors.append(tensor)
-        assert tensor.shape == (4096,)
-        # print(tensor_path, tensor.shape)
-
-    X = torch.stack(tensors, dim=0)
-    X = X.numpy()
-    print(X.shape)
-
-    S = df["confidence"].values
-    y = df["tag"].values
+    X, S, y = get_tensors(task)
+    json_path = get_json_path(task)
 
     # if shuffle:
     #     rng = np.random.default_rng(0)
     #     rng.shuffle(y)
 
     out_path = Path(f"./benchmark/gl/{task}/")
-    # out_path = Path(
-    #     f"/data/parietal/store3/soda/lihu/code/hallucination/benchmark/gl/{task}/"
-    # )
     out_path.mkdir(exist_ok=True, parents=True)
 
     if partitioner_name == "decision_tree":
@@ -527,8 +516,79 @@ def test_tensors(binwise_fit, partitioner_name, task):
     print(gle)
 
     metrics["source"] = str(json_path)
+    metrics["n_samples"] = X.shape[0]
 
     d = dict(t=task, s=strategy, b=binwise_fit, n=n_bins, p=partitioner_name)
+
+    # Write metrics to text file
+    filepath = save_path(str(out_path), ext="json", _name="metrics", **d)
+    with open(filepath, "w") as f:
+        f.write(json.dumps(metrics))
+
+    fig = gle.plot()
+    filepath = save_path(str(out_path), ext="pdf", _name="diagram", **d)
+    fig.savefig(filepath, bbox_inches="tight", pad_inches=0.1)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "mistral7b",
+    ],
+)
+def test_tensors_all(model):
+    partitioner_name = "decision_tree"
+    n_bins = 15
+    strategy = "quantile"
+    binwise_fit = True
+    method = "nli"
+    relations = [
+        "composer",
+        "founder",
+    ]
+
+    tasks = [f"{model}_{relation}_{method}" for relation in relations]
+
+    res = [get_tensors(task) for task in tasks]
+    X, S, y = zip(*res)
+    X = np.concatenate(X, axis=0)
+    S = np.concatenate(S, axis=0)
+    y = np.concatenate(y, axis=0)
+
+    out_path = Path(f"./benchmark/gl/merged/{model}_{method}/")
+    out_path.mkdir(exist_ok=True, parents=True)
+
+    if partitioner_name == "decision_tree":
+        partitioner_est = DecisionTreeClassifier(random_state=0)
+
+    elif partitioner_name == "oblique_tree":
+        partitioner_est = ObliqueDecisionTreeClassifier(random_state=0)
+
+    partitioner = glest.Partitioner(
+        partitioner_est,
+        predict_method="apply",
+        n_bins=n_bins,
+        strategy=strategy,
+        binwise_fit=binwise_fit,
+        verbose=10,
+    )
+    gle = GLEstimator(S, partitioner, random_state=0, verbose=10)
+    gle.fit(X, y)
+    metrics = gle.metrics()
+    print(gle)
+
+    metrics["sources"] = [get_json_path(task) for task in tasks]
+    metrics["tasks"] = tasks
+    metrics["n_samples"] = [r[0].shape[0] for r in res]
+
+    d = dict(
+        model=model,
+        method=method,
+        s=strategy,
+        b=binwise_fit,
+        n=n_bins,
+        p=partitioner_name,
+    )
 
     # Write metrics to text file
     filepath = save_path(str(out_path), ext="json", _name="metrics", **d)
