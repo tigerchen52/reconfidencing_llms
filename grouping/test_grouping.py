@@ -412,8 +412,8 @@ def test_llama_forward_all():
 @pytest.mark.parametrize(
     "binwise_fit",
     [
-        False,
-        # True,
+        # False,
+        True,
     ],
 )
 @pytest.mark.parametrize(
@@ -423,11 +423,20 @@ def test_llama_forward_all():
         # "oblique_tree",
     ],
 )
-def test_tensors(binwise_fit, partitioner_name):
-    task = "mistral7b_composer_nli"
+@pytest.mark.parametrize(
+    "task",
+    [
+        # "mistral7b_composer_nli",
+        "mistral7b_founder_nli",
+        # "mistral7b_composer_jafc",
+        "mistral7b_founder_jafc",
+    ],
+)
+def test_tensors(binwise_fit, partitioner_name, task):
+    # task = "mistral7b_composer_nli"
     strategy = "quantile"
     n_bins = 15
-    shuffle = False
+    # shuffle = False
     # binwise_fit = True
     # partitioner_name = "oblique_tree"
 
@@ -474,7 +483,8 @@ def test_tensors(binwise_fit, partitioner_name):
     tensors = []
     for uuid in tqdm.tqdm(df["uuid"]):
         tensor_path = tensor_paths[uuid]
-        tensor: torch.Tensor = torch.load(tensor_path)
+        tensor: torch.Tensor = torch.load(tensor_path, map_location=torch.device("cpu"))
+        tensor = tensor.detach()
         tensor = tensor.mean(1).squeeze()
         tensors.append(tensor)
         assert tensor.shape == (4096,)
@@ -518,7 +528,7 @@ def test_tensors(binwise_fit, partitioner_name):
 
     metrics["source"] = str(json_path)
 
-    d = dict(s=strategy, b=binwise_fit, n=n_bins, p=partitioner_name)
+    d = dict(t=task, s=strategy, b=binwise_fit, n=n_bins, p=partitioner_name)
 
     # Write metrics to text file
     filepath = save_path(str(out_path), ext="json", _name="metrics", **d)
