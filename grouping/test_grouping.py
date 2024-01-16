@@ -16,6 +16,7 @@ from sklearn.tree import DecisionTreeClassifier
 import pytest
 from typing import Tuple
 from joblib.memory import Memory
+from sklearn.model_selection import ShuffleSplit
 
 mistral_code_path = "/Users/alexandreperez/dev/rep/inr-phd-llm_reconf/mistral-src"
 sys.path.append(mistral_code_path)
@@ -451,12 +452,14 @@ def get_tensors(task: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         assert tensor.shape == (4096,)
 
     X = torch.stack(tensors, dim=0)
+
     X = X.numpy()
 
     S = df["confidence"].values
     y = df["tag"].values
+    UUID = df["uuid"].values
 
-    return X, S, y
+    return X, S, y, UUID
 
 
 @pytest.mark.parametrize(
@@ -479,7 +482,7 @@ def get_tensors(task: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         # "mistral7b_composer_nli",
         "mistral7b_founder_nli",
         # "mistral7b_composer_jafc",
-        "mistral7b_founder_jafc",
+        # "mistral7b_founder_jafc",
     ],
 )
 def test_tensors(binwise_fit, partitioner_name, task):
@@ -490,7 +493,7 @@ def test_tensors(binwise_fit, partitioner_name, task):
     # binwise_fit = True
     # partitioner_name = "oblique_tree"
 
-    X, S, y = get_tensors(task)
+    X, S, y, UUID = get_tensors(task)
     json_path = get_json_path(task)
 
     # if shuffle:
@@ -544,9 +547,10 @@ def test_tensors(binwise_fit, partitioner_name, task):
     "partition_on_relation",
     [
         False,
-        True,
+        # True,
     ],
 )
+@memory.cache
 def test_tensors_all(model, partition_on_relation):
     partitioner_name = "decision_tree"
     n_bins = 15
@@ -562,14 +566,15 @@ def test_tensors_all(model, partition_on_relation):
     tasks = [f"{model}_{relation}_{method}" for relation in relations]
 
     res = [get_tensors(task) for task in tasks]
-    X, S, y = zip(*res)
+    X, S, y, UUID = zip(*res)
     R = [np.full(len(x), i) for i, x in enumerate(X)]
     X = np.concatenate(X, axis=0)
     S = np.concatenate(S, axis=0)
     y = np.concatenate(y, axis=0)
     R = np.concatenate(R, axis=0)
+    UUID = np.concatenate(UUID, axis=0)
 
-    assert X.shape[0] == S.shape[0] == y.shape[0] == R.shape[0]
+    assert X.shape[0] == S.shape[0] == y.shape[0] == R.shape[0] == UUID.shape[0]
 
     out_path = Path(f"./benchmark/gl/merged/{model}_{method}/")
     out_path.mkdir(exist_ok=True, parents=True)
@@ -587,6 +592,14 @@ def test_tensors_all(model, partition_on_relation):
         elif partitioner_name == "oblique_tree":
             partitioner_est = ObliqueDecisionTreeClassifier(random_state=0)
 
+        sss = ShuffleSplit(n_splits=1, train_size=0.5, random_state=0)
+        train_index, test_index = next(sss.split(X))
+
+    print(test_index.shape)
+    print(UUID.shape)
+
+    print(UUID[test_index].shape)
+
     partitioner = glest.Partitioner(
         partitioner_est,
         predict_method="apply",
@@ -595,8 +608,13 @@ def test_tensors_all(model, partition_on_relation):
         binwise_fit=binwise_fit,
         verbose=10,
     )
-    gle = GLEstimator(S, partitioner, random_state=0, verbose=10)
-    gle.fit(X, y, partition=partition)
+    gle = GLEstimator(S[train_index], partitioner, random_state=0, verbose=10)
+    gle.fit(
+        X[train_index],
+        y[train_index],
+        test_data=(X[test_index], y[test_index], S[test_index]),
+        partition=partition,
+    )
     metrics = gle.metrics()
     print(gle)
 
@@ -622,3 +640,103 @@ def test_tensors_all(model, partition_on_relation):
     fig = gle.plot()
     filepath = save_path(str(out_path), ext="pdf", _name="diagram", **d)
     fig.savefig(filepath, bbox_inches="tight", pad_inches=0.1)
+
+    frac_pos = gle.frac_pos_
+    counts = gle.counts_
+    mean_scores = gle.mean_scores_
+    label_ids = gle.label_ids_
+
+    #     return gle.frac_pos_, gle.counts_, gle.mean_scores_
+
+    # def test_extract_uuid():
+    #     frac_pos, counts, mean_scores = test_tensors_all("mistral7b", False)
+    k = 5
+    # idx1d = np.argsort(counts.ravel())[::-1][:k]
+    # idx = np.unravel_index(idx1d, counts.shape)
+
+    # print(idx)
+    # print(counts[idx])
+    # print(frac_pos[idx])
+    # print(diff[idx].round(3))
+
+    # weighted mean of frac_pos with counts
+    C = np.average(frac_pos, weights=counts, axis=1)
+    diff = frac_pos - C[:, None]
+    idx1d = np.argsort(np.absolute(diff).ravel())[::-1]
+    idx_counts = counts.ravel()[idx1d] >= 100
+    idx1d = idx1d[idx_counts]
+    idx1d = idx1d[:k]
+    idx = np.unravel_index(idx1d, counts.shape)
+    print(diff[idx].round(3))
+    print(counts[idx].round(3))
+    print(idx)
+
+    # turn tuple of arrays into list of tuple
+    idx = list(zip(*idx))
+    print(idx)
+
+    uuids = []
+
+    labels = partitioner.predict(X[test_index], S[test_index])
+
+    # for bin_id, label in idx:
+    #     print(labels)
+    # labels = partitioner.labels_
+    for bin_id, label, _idx in partitioner.iter_region(labels):
+        print(bin_id, label)
+        bin_id = int(bin_id)
+        label = int(label)
+        label_id = label_ids[bin_id, label]
+        if (bin_id, label_id) in idx:
+            print(len(_idx))
+            print(UUID[test_index][_idx])
+            uuids.append(
+                {
+                    "mean_confidence": mean_scores[bin_id, label],
+                    "mean_positives": frac_pos[bin_id, label],
+                    "mean_positives_bin": C[bin_id],
+                    "uuids": UUID[test_index][_idx].tolist(),
+                }
+            )
+        else:
+            print("not")
+
+    filepath = save_path(str(out_path), ext="json", _name="uuids", **d)
+    with open(filepath, "w") as f:
+        f.write(json.dumps(uuids))
+
+
+# @pytest.mark.parametrize(
+#     "model",
+#     [
+#         "mistral7b",
+#     ],
+# )
+# @pytest.mark.parametrize(
+#     "partition_on_relation",
+#     [
+#         False,
+#         True,
+#     ],
+# )
+# def test_tensors_all_uuids(model, partition_on_relation):
+#     partitioner_name = "decision_tree"
+#     n_bins = 15
+#     strategy = "quantile"
+#     binwise_fit = True
+#     method = "nli"
+#     # partition_on_relation = False
+#     relations = [
+#         "composer",
+#         "founder",
+#     ]
+
+#     tasks = [f"{model}_{relation}_{method}" for relation in relations]
+
+#     res = [get_tensors(task) for task in tasks]
+#     X, S, y = zip(*res)
+#     R = [np.full(len(x), i) for i, x in enumerate(X)]
+#     X = np.concatenate(X, axis=0)
+#     S = np.concatenate(S, axis=0)
+#     y = np.concatenate(y, axis=0)
+#     R = np.concatenate(R, axis=0)
