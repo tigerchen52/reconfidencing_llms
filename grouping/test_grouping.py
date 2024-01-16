@@ -536,12 +536,20 @@ def test_tensors(binwise_fit, partitioner_name, task):
         "mistral7b",
     ],
 )
-def test_tensors_all(model):
+@pytest.mark.parametrize(
+    "partition_on_relation",
+    [
+        # False,
+        True,
+    ],
+)
+def test_tensors_all(model, partition_on_relation):
     partitioner_name = "decision_tree"
     n_bins = 15
     strategy = "quantile"
     binwise_fit = True
     method = "nli"
+    # partition_on_relation = False
     relations = [
         "composer",
         "founder",
@@ -551,9 +559,13 @@ def test_tensors_all(model):
 
     res = [get_tensors(task) for task in tasks]
     X, S, y = zip(*res)
+    R = [np.full(len(x), i) for i, x in enumerate(X)]
     X = np.concatenate(X, axis=0)
     S = np.concatenate(S, axis=0)
     y = np.concatenate(y, axis=0)
+    R = np.concatenate(R, axis=0)
+
+    assert X.shape[0] == S.shape[0] == y.shape[0] == R.shape[0]
 
     out_path = Path(f"./benchmark/gl/merged/{model}_{method}/")
     out_path.mkdir(exist_ok=True, parents=True)
@@ -573,7 +585,10 @@ def test_tensors_all(model):
         verbose=10,
     )
     gle = GLEstimator(S, partitioner, random_state=0, verbose=10)
-    gle.fit(X, y)
+    if partition_on_relation:
+        gle.fit(X, y, partition=R)
+    else:
+        gle.fit(X, y)
     metrics = gle.metrics()
     print(gle)
 
@@ -588,6 +603,7 @@ def test_tensors_all(model):
         b=binwise_fit,
         n=n_bins,
         p=partitioner_name,
+        por=partition_on_relation,
     )
 
     # Write metrics to text file
