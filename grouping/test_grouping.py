@@ -15,6 +15,7 @@ from sktree.tree import ObliqueDecisionTreeClassifier
 from sklearn.tree import DecisionTreeClassifier
 import pytest
 from typing import Tuple
+from joblib.memory import Memory
 
 mistral_code_path = "/Users/alexandreperez/dev/rep/inr-phd-llm_reconf/mistral-src"
 sys.path.append(mistral_code_path)
@@ -24,6 +25,8 @@ from grouping.utils import save_path
 
 from prompt_template import RELATION_PROMPTS
 import matplotlib.pyplot as plt
+
+memory = Memory(location=".", verbose=0)
 
 
 def test_mistral():
@@ -414,6 +417,7 @@ def get_json_path(task: str) -> str:
     return f"/data/parietal/store3/soda/lihu/code/hallucination/benchmark/result_tag/{task}_tag.json"
 
 
+@memory.cache
 def get_tensors(task: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     tensor_dirpath = Path(
         f"/data/parietal/store3/soda/lihu/code/hallucination/benchmark/tensors/{task}/"
@@ -539,7 +543,7 @@ def test_tensors(binwise_fit, partitioner_name, task):
 @pytest.mark.parametrize(
     "partition_on_relation",
     [
-        # False,
+        False,
         True,
     ],
 )
@@ -570,11 +574,18 @@ def test_tensors_all(model, partition_on_relation):
     out_path = Path(f"./benchmark/gl/merged/{model}_{method}/")
     out_path.mkdir(exist_ok=True, parents=True)
 
-    if partitioner_name == "decision_tree":
-        partitioner_est = DecisionTreeClassifier(random_state=0)
+    if partition_on_relation:
+        partitioner_name = None
+        partitioner_est = None
+        partition = R
 
-    elif partitioner_name == "oblique_tree":
-        partitioner_est = ObliqueDecisionTreeClassifier(random_state=0)
+    else:
+        partition = None
+        if partitioner_name == "decision_tree":
+            partitioner_est = DecisionTreeClassifier(random_state=0)
+
+        elif partitioner_name == "oblique_tree":
+            partitioner_est = ObliqueDecisionTreeClassifier(random_state=0)
 
     partitioner = glest.Partitioner(
         partitioner_est,
@@ -585,10 +596,7 @@ def test_tensors_all(model, partition_on_relation):
         verbose=10,
     )
     gle = GLEstimator(S, partitioner, random_state=0, verbose=10)
-    if partition_on_relation:
-        gle.fit(X, y, partition=R)
-    else:
-        gle.fit(X, y)
+    gle.fit(X, y, partition=partition)
     metrics = gle.metrics()
     print(gle)
 
