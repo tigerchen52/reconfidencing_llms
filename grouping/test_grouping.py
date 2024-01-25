@@ -876,14 +876,14 @@ def test_reconfidence(task):
     "model",
     [
         "mistral7b",
-        # "llama7b",
+        "llama7b",
     ],
 )
 @pytest.mark.parametrize(
     "method",
     [
         "nli",
-        # "jafc",
+        "jafc",
     ],
 )
 # @memory.cache
@@ -920,10 +920,10 @@ def run_reconfidence(X, S, y, UUID, task):
     y_test = y[idx_test]
     UUID_test = UUID[idx_test]
 
-    out_path = (
-        Path("/data/parietal/store3/soda/lihu/code/hallucination/benchmark/gl/") / task
-    )
-    # out_path = Path("./benchmark/gl/") / task
+    # out_path = (
+    #     Path("/data/parietal/store3/soda/lihu/code/hallucination/benchmark/gl/") / task
+    # )
+    out_path = Path("./benchmark/gl/") / task
     out_path.mkdir(exist_ok=True, parents=True)
 
     # Estimate the CL/GL before
