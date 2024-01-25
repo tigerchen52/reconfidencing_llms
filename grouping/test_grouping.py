@@ -853,35 +853,12 @@ def recalibrate_scores(S_train, y_train, S_array):
     ],
 )
 def test_reconfidence(task):
-    # task = "mistral7b_composer_nli"
-    # strategy = "quantile"
-    # n_bins = 15
-    # shuffle = False
-    # binwise_fit = True
-    # partitioner_name = "oblique_tree"
-
     X, S, y, UUID = get_tensors(task)
-    # json_path = get_json_path(task)
+    json_path = get_json_path(task)
 
-    # if shuffle:
-    #     rng = np.random.default_rng(0)
-    #     rng.shuffle(y)
-
-    print(X.shape)
     idx = np.arange(len(X))
-    print(idx.shape)
     idx_train_val, idx_test = train_test_split(idx, test_size=0.5, random_state=0)
-    print(idx_train_val)
-    print(idx_train_val.shape)
-    print(idx_test.shape)
-    print(idx_train_val.shape)
     idx_train, idx_val = train_test_split(idx_train_val, test_size=0.5, random_state=0)
-    print(idx_train.shape)
-    print(idx_val.shape)
-    print(idx_train)
-    print(idx_train_val)
-    # idx_train = idx_train_val[idx_train]
-    # idx_val = idx_train_val[idx_val]
 
     X_train = X[idx_train]
     S_train = S[idx_train]
@@ -899,12 +876,7 @@ def test_reconfidence(task):
     out_path = Path(f"./benchmark/gl/{task}/")
     out_path.mkdir(exist_ok=True, parents=True)
 
-    # if partitioner_name == "decision_tree":
-    #     partitioner_est = DecisionTreeClassifier(random_state=0)
-
-    # elif partitioner_name == "oblique_tree":
-    #     partitioner_est = ObliqueDecisionTreeClassifier(random_state=0)
-
+    # Estimate the CL/GL before
     partitioner_est1 = DecisionTreeClassifier(random_state=0)
     partitioner1 = glest.Partitioner(
         partitioner_est1,
@@ -914,24 +886,11 @@ def test_reconfidence(task):
         binwise_fit=True,
         verbose=10,
     )
-    gle = GLEstimator(S_train, partitioner1, random_state=0, verbose=10)
-    gle.fit(X_train, y_train, test_data=(X_val, y_val, S_val))
-    metrics = gle.metrics()
-    print(gle)
-
-    # metrics["source"] = str(json_path)
-    # metrics["n_samples"] = X.shape[0]
-
-    # d = dict(t=task, s=strategy, b=binwise_fit, n=n_bins, p=partitioner_name)
-
-    # Write metrics to text file
-    # filepath = save_path(str(out_path), ext="json", _name="metrics", **d)
-    # with open(filepath, "w") as f:
-    #     f.write(json.dumps(metrics))
-
-    # fig = gle.plot()
-    # filepath = save_path(str(out_path), ext="pdf", _name="diagram", **d)
-    # fig.savefig(filepath, bbox_inches="tight", pad_inches=0.1)
+    # gle = GLEstimator(S_train, partitioner1, random_state=0, verbose=10)
+    # gle.fit(X_train, y_train, test_data=(X_val, y_val, S_val))
+    gle = GLEstimator(S_test, partitioner1, random_state=0, verbose=10)
+    gle.fit(X_test, y_test)
+    metrics_before = gle.metrics()
 
     set_latex_font()
     fig, ax = plt.subplots(figsize=(3, 2))
@@ -939,6 +898,7 @@ def test_reconfidence(task):
     ax.set_title(task, y=1.5)
     save_fig(fig, str(out_path), ext="pdf", _name="diagram", task=task)
 
+    # Fit isotonics
     partitioner_est = DecisionTreeClassifier(random_state=0, max_leaf_nodes=5)
     partitioner = glest.Partitioner(
         partitioner_est,
@@ -950,9 +910,7 @@ def test_reconfidence(task):
     )
     partitioner.fit(X_train, S_train, y_train)
     recalibrators = get_recalibrators(partitioner, X_val, y_val, S_val)
-    print(recalibrators)
 
-    # set_latex_font()
     fig, ax = plt.subplots(figsize=(3, 2))
     fig = gle.plot(ax=ax)
 
@@ -960,30 +918,24 @@ def test_reconfidence(task):
 
     for label_id, recalibrator in recalibrators.items():
         p = recalibrator.predict_proba(SS)
-        # print(p)
         print(label_id, p.shape)
         if p.shape[1] == 2:
             ax.plot(SS, p[:, 1], label=f"{int(label_id)}")
 
-    # add_legend(ax, title="Leaf id")
-    # save_fig(fig, out)
-
-    # fig.suptitle(task)
     ax.set_title(task, y=1.5)
     save_fig(fig, str(out_path), ext="pdf", _name="diagram_isos", task=task)
 
+    # Reconfidence
     S_reconf_test = reconfidence(partitioner, recalibrators, X_test, S_test)
-    print(S_reconf_test)
 
-    S_recal_val, S_recal_test = recalibrate_scores(S_val, y_val, [S_val, S_test])
+    # Recalibrate
+    (S_recal_test,) = recalibrate_scores(S_val, y_val, [S_test])
 
     gle = GLEstimator(S_reconf_test, partitioner1, random_state=0, verbose=10)
     gle.fit(X_test, y_test)
-    metrics = gle.metrics()
+    metrics_after_reconf = gle.metrics()
     print(gle)
-    # print(metrics)
 
-    set_latex_font()
     fig, ax = plt.subplots(figsize=(3, 2))
     gle.plot(ax=ax)
     ax.set_title(task, y=1.5)
@@ -991,12 +943,27 @@ def test_reconfidence(task):
 
     gle = GLEstimator(S_recal_test, partitioner1, random_state=0, verbose=10)
     gle.fit(X_test, y_test)
-    metrics = gle.metrics()
+    metrics_after_recal = gle.metrics()
     print(gle)
-    # print(metrics)
 
     set_latex_font()
     fig, ax = plt.subplots(figsize=(3, 2))
     gle.plot(ax=ax)
     ax.set_title(task, y=1.5)
     save_fig(fig, str(out_path), ext="pdf", _name="diagram_recal", task=task)
+
+    # Save scores
+    df_S_before = pd.DataFrame(S_test, columns=["S"], index=UUID_test)
+    df_S_after_reconf = pd.DataFrame(S_reconf_test, columns=["S"], index=UUID_test)
+    df_S_after_recal = pd.DataFrame(S_recal_test, columns=["S"], index=UUID_test)
+
+    df_S_before.to_csv(out_path / "S_before.csv")
+    df_S_after_reconf.to_csv(out_path / "S_after_reconf.csv")
+    df_S_after_recal.to_csv(out_path / "S_after_recal.csv")
+
+    # Save metrics
+    df_metrics = pd.DataFrame(
+        [metrics_before, metrics_after_reconf, metrics_after_recal],
+        index=pd.Index(["before", "after_reconf", "after_recal"], name="which"),
+    )
+    df_metrics.to_csv(out_path / "metrics.csv")
