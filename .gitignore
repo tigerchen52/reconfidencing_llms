@@ -4,8 +4,8 @@ mistral-src
 joblib
 benchmark
 *.txt
-glest
 environment.yml
+glest/.git/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
