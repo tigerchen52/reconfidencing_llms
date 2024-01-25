@@ -465,8 +465,8 @@ def get_tensors(task: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 @pytest.mark.parametrize(
     "binwise_fit",
     [
-        # False,
-        True,
+        False,
+        # True,
     ],
 )
 @pytest.mark.parametrize(
@@ -480,9 +480,15 @@ def get_tensors(task: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     "task",
     [
         # "mistral7b_composer_nli",
-        "mistral7b_founder_nli",
+        # "mistral7b_founder_nli",
         # "mistral7b_composer_jafc",
         # "mistral7b_founder_jafc",
+        "llama7b_birth_date_nli",
+        "llama7b_birth_date_jafc",
+        "llama7b_composer_nli",
+        "llama7b_composer_jafc",
+        "llama7b_founder_nli",
+        "llama7b_founder_jafc",
     ],
 )
 def test_tensors(binwise_fit, partitioner_name, task):
@@ -540,7 +546,8 @@ def test_tensors(binwise_fit, partitioner_name, task):
 @pytest.mark.parametrize(
     "model",
     [
-        "mistral7b",
+        # "mistral7b",
+        "llama7b",
     ],
 )
 @pytest.mark.parametrize(
@@ -550,17 +557,25 @@ def test_tensors(binwise_fit, partitioner_name, task):
         # True,
     ],
 )
-@memory.cache
-def test_tensors_all(model, partition_on_relation):
+@pytest.mark.parametrize(
+    "method",
+    [
+        "nli",
+        "jafc",
+    ],
+)
+# @memory.cache
+def test_tensors_all(model, partition_on_relation, method):
     partitioner_name = "decision_tree"
     n_bins = 15
     strategy = "quantile"
     binwise_fit = True
-    method = "nli"
+    # method = "nli"
     # partition_on_relation = False
     relations = [
         "composer",
         "founder",
+        "birth_date",
     ]
 
     tasks = [f"{model}_{relation}_{method}" for relation in relations]
@@ -646,6 +661,7 @@ def test_tensors_all(model, partition_on_relation):
     mean_scores = gle.mean_scores_
     label_ids = gle.label_ids_
 
+    return
     #     return gle.frac_pos_, gle.counts_, gle.mean_scores_
 
     # def test_extract_uuid():
