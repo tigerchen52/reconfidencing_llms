@@ -824,6 +824,12 @@ def reconfidence(partitioner: glest.Partitioner, recalibrators: dict, X, S):
     return S_recal
 
 
+def recalibrate_scores(S_train, y_train, S_array):
+    calibrated_classifier = fit_recalibrator(S_train, y_train)
+    # Getting the calibrated probabilities
+    return [calibrated_classifier.predict_proba(S)[:, 1] for S in S_array]
+
+
 # @pytest.mark.parametrize(
 #     "partitioner_name",
 #     [
@@ -946,9 +952,6 @@ def test_reconfidence(task):
     recalibrators = get_recalibrators(partitioner, X_val, y_val, S_val)
     print(recalibrators)
 
-    S_rec_test = reconfidence(partitioner, recalibrators, X_test, S_test)
-    print(S_rec_test)
-
     # set_latex_font()
     fig, ax = plt.subplots(figsize=(3, 2))
     fig = gle.plot(ax=ax)
@@ -968,3 +971,32 @@ def test_reconfidence(task):
     # fig.suptitle(task)
     ax.set_title(task, y=1.5)
     save_fig(fig, str(out_path), ext="pdf", _name="diagram_isos", task=task)
+
+    S_reconf_test = reconfidence(partitioner, recalibrators, X_test, S_test)
+    print(S_reconf_test)
+
+    S_recal_val, S_recal_test = recalibrate_scores(S_val, y_val, [S_val, S_test])
+
+    gle = GLEstimator(S_reconf_test, partitioner1, random_state=0, verbose=10)
+    gle.fit(X_test, y_test)
+    metrics = gle.metrics()
+    print(gle)
+    # print(metrics)
+
+    set_latex_font()
+    fig, ax = plt.subplots(figsize=(3, 2))
+    gle.plot(ax=ax)
+    ax.set_title(task, y=1.5)
+    save_fig(fig, str(out_path), ext="pdf", _name="diagram_reconf", task=task)
+
+    gle = GLEstimator(S_recal_test, partitioner1, random_state=0, verbose=10)
+    gle.fit(X_test, y_test)
+    metrics = gle.metrics()
+    print(gle)
+    # print(metrics)
+
+    set_latex_font()
+    fig, ax = plt.subplots(figsize=(3, 2))
+    gle.plot(ax=ax)
+    ax.set_title(task, y=1.5)
+    save_fig(fig, str(out_path), ext="pdf", _name="diagram_recal", task=task)
