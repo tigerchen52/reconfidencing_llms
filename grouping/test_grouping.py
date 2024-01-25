@@ -956,14 +956,17 @@ def test_reconfidence(task):
     df_S_before = pd.DataFrame(S_test, columns=["S"], index=UUID_test)
     df_S_after_reconf = pd.DataFrame(S_reconf_test, columns=["S"], index=UUID_test)
     df_S_after_recal = pd.DataFrame(S_recal_test, columns=["S"], index=UUID_test)
+    df_y = pd.DataFrame(y_test, columns=["y"], index=UUID_test)
 
     df_S_before.to_csv(out_path / "S_before.csv")
     df_S_after_reconf.to_csv(out_path / "S_after_reconf.csv")
     df_S_after_recal.to_csv(out_path / "S_after_recal.csv")
+    df_y.to_csv(out_path / "y.csv")
 
     # Save metrics
     df_metrics = pd.DataFrame(
         [metrics_before, metrics_after_reconf, metrics_after_recal],
         index=pd.Index(["before", "after_reconf", "after_recal"], name="which"),
     )
+    df_metrics["task"] = task
     df_metrics.to_csv(out_path / "metrics.csv")
