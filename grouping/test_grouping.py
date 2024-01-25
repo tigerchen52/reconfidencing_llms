@@ -25,7 +25,7 @@ mistral_code_path = "/Users/alexandreperez/dev/rep/inr-phd-llm_reconf/mistral-sr
 sys.path.append(mistral_code_path)
 sys.path.append("/Users/alexandreperez/dev/rep/inr-phd-llm_reconf")
 
-from grouping.utils import save_path
+from grouping.utils import save_path, save_fig, set_latex_font
 
 from prompt_template import RELATION_PROMPTS
 import matplotlib.pyplot as plt
@@ -790,11 +790,11 @@ def fit_recalibrator(S_train, y_train):
 @pytest.mark.parametrize(
     "task",
     [
-        # "mistral7b_composer_nli",
+        "mistral7b_composer_nli",
         # "mistral7b_founder_nli",
         # "mistral7b_composer_jafc",
         # "mistral7b_founder_jafc",
-        "llama7b_birth_date_nli",
+        # "llama7b_birth_date_nli",
         # "llama7b_birth_date_jafc",
         # "llama7b_composer_nli",
         # "llama7b_composer_jafc",
@@ -855,16 +855,16 @@ def test_reconfidence(task):
     # elif partitioner_name == "oblique_tree":
     #     partitioner_est = ObliqueDecisionTreeClassifier(random_state=0)
 
-    partitioner_est = DecisionTreeClassifier(random_state=0, max_leaf_nodes=5)
-    partitioner = glest.Partitioner(
-        partitioner_est,
+    partitioner_est1 = DecisionTreeClassifier(random_state=0)
+    partitioner1 = glest.Partitioner(
+        partitioner_est1,
         predict_method="apply",
         n_bins=15,
         strategy="quantile",
-        binwise_fit=False,
+        binwise_fit=True,
         verbose=10,
     )
-    gle = GLEstimator(S_train, partitioner, random_state=0, verbose=10)
+    gle = GLEstimator(S_train, partitioner1, random_state=0, verbose=10)
     gle.fit(X_train, y_train, test_data=(X_val, y_val, S_val))
     metrics = gle.metrics()
     print(gle)
@@ -882,6 +882,23 @@ def test_reconfidence(task):
     # fig = gle.plot()
     # filepath = save_path(str(out_path), ext="pdf", _name="diagram", **d)
     # fig.savefig(filepath, bbox_inches="tight", pad_inches=0.1)
+
+    set_latex_font()
+    fig, ax = plt.subplots(figsize=(3, 2))
+    gle.plot(ax=ax)
+    ax.set_title(task, y=1.5)
+    save_fig(fig, str(out_path), ext="pdf", _name="diagram", task=task)
+
+    partitioner_est = DecisionTreeClassifier(random_state=0, max_leaf_nodes=5)
+    partitioner = glest.Partitioner(
+        partitioner_est,
+        predict_method="apply",
+        n_bins=15,
+        strategy="quantile",
+        binwise_fit=False,
+        verbose=10,
+    )
+    partitioner.fit(X_train, S_train, y_train)
 
     def get_recalibrators(X, y, S):
         labels = partitioner.predict(X, S)
@@ -913,6 +930,7 @@ def test_reconfidence(task):
 
     # set_latex_font()
     fig, ax = plt.subplots(figsize=(3, 2))
+    fig = gle.plot(ax=ax)
 
     SS = np.linspace(0, 1, 100)
 
@@ -926,6 +944,6 @@ def test_reconfidence(task):
     # add_legend(ax, title="Leaf id")
     # save_fig(fig, out)
 
-    filepath = save_path(str(out_path), ext="pdf", _name="diagram")
-    print(filepath)
-    fig.savefig(filepath, bbox_inches="tight", pad_inches=0.1)
+    # fig.suptitle(task)
+    ax.set_title(task, y=1.5)
+    save_fig(fig, str(out_path), ext="pdf", _name="diagram_isos", task=task)
