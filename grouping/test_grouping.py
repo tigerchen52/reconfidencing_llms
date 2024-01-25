@@ -895,7 +895,7 @@ def test_reconfidence_merged(model, method):
     ]
 
     tasks = [f"{model}_{relation}_{method}" for relation in relations]
-    X, S, y, UUID = get_tensors(tasks)
+    X, S, y, UUID = get_tensors_merged(tasks)
     task = f"merged/{model}_{method}"
     run_reconfidence(X, S, y, UUID, task)
 
@@ -920,7 +920,10 @@ def run_reconfidence(X, S, y, UUID, task):
     y_test = y[idx_test]
     UUID_test = UUID[idx_test]
 
-    out_path = Path("./benchmark/gl/") / task
+    out_path = (
+        Path("/data/parietal/store3/soda/lihu/code/hallucination/benchmark/gl/") / task
+    )
+    # out_path = Path("./benchmark/gl/") / task
     out_path.mkdir(exist_ok=True, parents=True)
 
     # Estimate the CL/GL before
