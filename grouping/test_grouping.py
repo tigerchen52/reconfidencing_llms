@@ -17,6 +17,9 @@ import pytest
 from typing import Tuple
 from joblib.memory import Memory
 from sklearn.model_selection import ShuffleSplit
+from sklearn.model_selection import train_test_split
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.calibration import CalibratedClassifierCV
 
 mistral_code_path = "/Users/alexandreperez/dev/rep/inr-phd-llm_reconf/mistral-src"
 sys.path.append(mistral_code_path)
@@ -756,3 +759,173 @@ def test_tensors_all(model, partition_on_relation, method):
 #     S = np.concatenate(S, axis=0)
 #     y = np.concatenate(y, axis=0)
 #     R = np.concatenate(R, axis=0)
+
+
+def fit_recalibrator(S_train, y_train):
+    class DummyClassifier(ClassifierMixin, BaseEstimator):
+        def __init__(self):
+            self.classes_ = np.unique(y_train)
+
+        def fit(self, X, y):
+            return self
+
+        def predict_proba(self, X):
+            return np.column_stack((1 - X, X))
+
+    custom_classifier = DummyClassifier()
+    calibrated_classifier = CalibratedClassifierCV(
+        estimator=custom_classifier, method="isotonic", cv="prefit"
+    )
+    calibrated_classifier.fit(S_train, y_train)
+    return calibrated_classifier
+
+
+# @pytest.mark.parametrize(
+#     "partitioner_name",
+#     [
+#         "decision_tree",
+#         # "oblique_tree",
+#     ],
+# )
+@pytest.mark.parametrize(
+    "task",
+    [
+        # "mistral7b_composer_nli",
+        # "mistral7b_founder_nli",
+        # "mistral7b_composer_jafc",
+        # "mistral7b_founder_jafc",
+        "llama7b_birth_date_nli",
+        # "llama7b_birth_date_jafc",
+        # "llama7b_composer_nli",
+        # "llama7b_composer_jafc",
+        # "llama7b_founder_nli",
+        # "llama7b_founder_jafc",
+    ],
+)
+def test_reconfidence(task):
+    # task = "mistral7b_composer_nli"
+    # strategy = "quantile"
+    # n_bins = 15
+    # shuffle = False
+    # binwise_fit = True
+    # partitioner_name = "oblique_tree"
+
+    X, S, y, UUID = get_tensors(task)
+    # json_path = get_json_path(task)
+
+    # if shuffle:
+    #     rng = np.random.default_rng(0)
+    #     rng.shuffle(y)
+
+    print(X.shape)
+    idx = np.arange(len(X))
+    print(idx.shape)
+    idx_train_val, idx_test = train_test_split(idx, test_size=0.5, random_state=0)
+    print(idx_train_val)
+    print(idx_train_val.shape)
+    print(idx_test.shape)
+    print(idx_train_val.shape)
+    idx_train, idx_val = train_test_split(idx_train_val, test_size=0.5, random_state=0)
+    print(idx_train.shape)
+    print(idx_val.shape)
+    print(idx_train)
+    print(idx_train_val)
+    # idx_train = idx_train_val[idx_train]
+    # idx_val = idx_train_val[idx_val]
+
+    X_train = X[idx_train]
+    S_train = S[idx_train]
+    y_train = y[idx_train]
+    UUID_train = UUID[idx_train]
+    X_val = X[idx_val]
+    S_val = S[idx_val]
+    y_val = y[idx_val]
+    UUID_val = UUID[idx_val]
+    X_test = X[idx_test]
+    S_test = S[idx_test]
+    y_test = y[idx_test]
+    UUID_test = UUID[idx_test]
+
+    out_path = Path(f"./benchmark/gl/{task}/")
+    out_path.mkdir(exist_ok=True, parents=True)
+
+    # if partitioner_name == "decision_tree":
+    #     partitioner_est = DecisionTreeClassifier(random_state=0)
+
+    # elif partitioner_name == "oblique_tree":
+    #     partitioner_est = ObliqueDecisionTreeClassifier(random_state=0)
+
+    partitioner_est = DecisionTreeClassifier(random_state=0, max_leaf_nodes=5)
+    partitioner = glest.Partitioner(
+        partitioner_est,
+        predict_method="apply",
+        n_bins=15,
+        strategy="quantile",
+        binwise_fit=False,
+        verbose=10,
+    )
+    gle = GLEstimator(S_train, partitioner, random_state=0, verbose=10)
+    gle.fit(X_train, y_train, test_data=(X_val, y_val, S_val))
+    metrics = gle.metrics()
+    print(gle)
+
+    # metrics["source"] = str(json_path)
+    # metrics["n_samples"] = X.shape[0]
+
+    # d = dict(t=task, s=strategy, b=binwise_fit, n=n_bins, p=partitioner_name)
+
+    # Write metrics to text file
+    # filepath = save_path(str(out_path), ext="json", _name="metrics", **d)
+    # with open(filepath, "w") as f:
+    #     f.write(json.dumps(metrics))
+
+    # fig = gle.plot()
+    # filepath = save_path(str(out_path), ext="pdf", _name="diagram", **d)
+    # fig.savefig(filepath, bbox_inches="tight", pad_inches=0.1)
+
+    def get_recalibrators(X, y, S):
+        labels = partitioner.predict(X, S)
+
+        uniques, counts = np.unique(labels[:, 1], return_counts=True)
+
+        recalibrators = {}
+        for label_id, c in zip(uniques, counts):
+            print(f"label_id={label_id}, c={c}")
+            # if c <= 5:
+            #     continue
+            idx = labels[:, 1] == label_id
+            bin_ids = labels[idx, 0]
+            # print(bin_ids)
+
+            S_bin = S[idx]
+            y_bin = y[idx]
+
+            # S, S, S = recalibrate_scores(
+            #     S_bin, y_bin, [S, S, S]
+            # )
+            recalibrator = fit_recalibrator(S_bin, y_bin)
+            recalibrators[label_id] = recalibrator
+
+        return recalibrators
+
+    recalibrators = get_recalibrators(X_val, y_val, S_val)
+    print(recalibrators)
+
+    # set_latex_font()
+    fig, ax = plt.subplots(figsize=(3, 2))
+
+    SS = np.linspace(0, 1, 100)
+
+    for label_id, recalibrator in recalibrators.items():
+        p = recalibrator.predict_proba(SS)
+        # print(p)
+        print(label_id, p.shape)
+        if p.shape[1] == 2:
+            ax.plot(SS, p[:, 1], label=f"{int(label_id)}")
+
+    # add_legend(ax, title="Leaf id")
+    # save_fig(fig, out)
+
+    filepath = save_path(str(out_path), ext="pdf", _name="diagram")
+    print(filepath)
+    fig.savefig(filepath, bbox_inches="tight", pad_inches=0.1)

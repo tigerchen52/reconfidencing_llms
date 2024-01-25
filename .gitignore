@@ -1,6 +1,11 @@
 *.npy
 *.pdf
 mistral-src
+joblib
+benchmark
+*.txt
+glest
+environment.yml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
