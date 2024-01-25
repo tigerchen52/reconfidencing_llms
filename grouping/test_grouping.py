@@ -780,6 +780,50 @@ def fit_recalibrator(S_train, y_train):
     return calibrated_classifier
 
 
+def get_recalibrators(partitioner: glest.Partitioner, X, y, S):
+    labels = partitioner.predict(X, S)
+
+    uniques, counts = np.unique(labels[:, 1], return_counts=True)
+
+    recalibrators = {}
+    for label_id, c in zip(uniques, counts):
+        print(f"label_id={label_id}, c={c}")
+        # if c <= 5:
+        #     continue
+        idx = labels[:, 1] == label_id
+        bin_ids = labels[idx, 0]
+        # print(bin_ids)
+
+        S_bin = S[idx]
+        y_bin = y[idx]
+
+        # S, S, S = recalibrate_scores(
+        #     S_bin, y_bin, [S, S, S]
+        # )
+        recalibrator = fit_recalibrator(S_bin, y_bin)
+        recalibrators[label_id] = recalibrator
+
+    return recalibrators
+
+
+def reconfidence(partitioner: glest.Partitioner, recalibrators: dict, X, S):
+    labels = partitioner.predict(X, S)
+
+    uniques, counts = np.unique(labels[:, 1], return_counts=True)
+
+    S_recal = S.copy()
+
+    for label_id, c in zip(uniques, counts):
+        recalibrator = recalibrators.get(label_id, None)
+        if recalibrator is None:
+            continue
+        idx = labels[:, 1] == label_id
+        S_bin = S[idx]
+        S_recal[idx] = recalibrator.predict_proba(S_bin)[:, 1]
+
+    return S_recal
+
+
 # @pytest.mark.parametrize(
 #     "partitioner_name",
 #     [
@@ -899,34 +943,11 @@ def test_reconfidence(task):
         verbose=10,
     )
     partitioner.fit(X_train, S_train, y_train)
-
-    def get_recalibrators(X, y, S):
-        labels = partitioner.predict(X, S)
-
-        uniques, counts = np.unique(labels[:, 1], return_counts=True)
-
-        recalibrators = {}
-        for label_id, c in zip(uniques, counts):
-            print(f"label_id={label_id}, c={c}")
-            # if c <= 5:
-            #     continue
-            idx = labels[:, 1] == label_id
-            bin_ids = labels[idx, 0]
-            # print(bin_ids)
-
-            S_bin = S[idx]
-            y_bin = y[idx]
-
-            # S, S, S = recalibrate_scores(
-            #     S_bin, y_bin, [S, S, S]
-            # )
-            recalibrator = fit_recalibrator(S_bin, y_bin)
-            recalibrators[label_id] = recalibrator
-
-        return recalibrators
-
-    recalibrators = get_recalibrators(X_val, y_val, S_val)
+    recalibrators = get_recalibrators(partitioner, X_val, y_val, S_val)
     print(recalibrators)
+
+    S_rec_test = reconfidence(partitioner, recalibrators, X_test, S_test)
+    print(S_rec_test)
 
     # set_latex_font()
     fig, ax = plt.subplots(figsize=(3, 2))
