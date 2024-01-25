@@ -465,6 +465,21 @@ def get_tensors(task: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     return X, S, y, UUID
 
 
+def get_tensors_merged(tasks: List[str]):
+    res = [get_tensors(task) for task in tasks]
+    X, S, y, UUID = zip(*res)
+    R = [np.full(len(x), i) for i, x in enumerate(X)]
+    X = np.concatenate(X, axis=0)
+    S = np.concatenate(S, axis=0)
+    y = np.concatenate(y, axis=0)
+    R = np.concatenate(R, axis=0)
+    UUID = np.concatenate(UUID, axis=0)
+
+    assert X.shape[0] == S.shape[0] == y.shape[0] == R.shape[0] == UUID.shape[0]
+
+    return X, S, y, UUID
+
+
 @pytest.mark.parametrize(
     "binwise_fit",
     [
@@ -841,20 +856,52 @@ def recalibrate_scores(S_train, y_train, S_array):
     "task",
     [
         "mistral7b_composer_nli",
-        # "mistral7b_founder_nli",
-        # "mistral7b_composer_jafc",
-        # "mistral7b_founder_jafc",
-        # "llama7b_birth_date_nli",
-        # "llama7b_birth_date_jafc",
-        # "llama7b_composer_nli",
-        # "llama7b_composer_jafc",
-        # "llama7b_founder_nli",
-        # "llama7b_founder_jafc",
+        "mistral7b_founder_nli",
+        "mistral7b_composer_jafc",
+        "mistral7b_founder_jafc",
+        "llama7b_birth_date_nli",
+        "llama7b_birth_date_jafc",
+        "llama7b_composer_nli",
+        "llama7b_composer_jafc",
+        "llama7b_founder_nli",
+        "llama7b_founder_jafc",
     ],
 )
 def test_reconfidence(task):
     X, S, y, UUID = get_tensors(task)
-    json_path = get_json_path(task)
+    run_reconfidence(X, S, y, UUID, task)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "mistral7b",
+        # "llama7b",
+    ],
+)
+@pytest.mark.parametrize(
+    "method",
+    [
+        "nli",
+        # "jafc",
+    ],
+)
+# @memory.cache
+def test_reconfidence_merged(model, method):
+    relations = [
+        "composer",
+        "founder",
+        "birth_date",
+    ]
+
+    tasks = [f"{model}_{relation}_{method}" for relation in relations]
+    X, S, y, UUID = get_tensors(tasks)
+    task = f"merged/{model}_{method}"
+    run_reconfidence(X, S, y, UUID, task)
+
+
+def run_reconfidence(X, S, y, UUID, task):
+    # json_path = get_json_path(task)
 
     idx = np.arange(len(X))
     idx_train_val, idx_test = train_test_split(idx, test_size=0.5, random_state=0)
@@ -873,7 +920,7 @@ def test_reconfidence(task):
     y_test = y[idx_test]
     UUID_test = UUID[idx_test]
 
-    out_path = Path(f"./benchmark/gl/{task}/")
+    out_path = Path("./benchmark/gl/") / task
     out_path.mkdir(exist_ok=True, parents=True)
 
     # Estimate the CL/GL before
