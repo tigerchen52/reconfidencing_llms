@@ -834,7 +834,10 @@ def reconfidence(partitioner: glest.Partitioner, recalibrators: dict, X, S):
             continue
         idx = labels[:, 1] == label_id
         S_bin = S[idx]
-        S_recal[idx] = recalibrator.predict_proba(S_bin)[:, 1]
+
+        p = recalibrator.predict_proba(S_bin)
+        if p.shape[1] == 2:
+            S_recal[idx] = p[:, 1]
 
     return S_recal
 
@@ -855,6 +858,8 @@ def recalibrate_scores(S_train, y_train, S_array):
 @pytest.mark.parametrize(
     "task",
     [
+        "mistral7b_birth_date_nli",
+        "mistral7b_birth_date_jafc",
         "mistral7b_composer_nli",
         "mistral7b_founder_nli",
         "mistral7b_composer_jafc",
@@ -868,7 +873,25 @@ def recalibrate_scores(S_train, y_train, S_array):
     ],
 )
 def test_reconfidence(task):
+    # get idx of S where S > 1
+    # idx = np.where(S > 1)
     X, S, y, UUID = get_tensors(task)
+    # assert that S are all in [0, 1]
+
+    # Some probas are in the 0-100 scale
+    S[S > 1] /= 100
+    # Very few probas are wrong
+    S = np.clip(S, 0, 1)
+    # print(len(np.where(S > 1)), task)
+    # assert np.all(S >= 0)
+    # assert np.all(S <= 1)
+
+    # print(S[np.argsort(-S)])
+    # print(S.mean())
+    # print(S.max())
+    # return
+    # print(get_json_path(task))
+    # assert
     run_reconfidence(X, S, y, UUID, task)
 
 
@@ -897,11 +920,17 @@ def test_reconfidence_merged(model, method):
     tasks = [f"{model}_{relation}_{method}" for relation in relations]
     X, S, y, UUID = get_tensors_merged(tasks)
     task = f"merged/{model}_{method}"
+    # Some probas are in the 0-100 scale
+    S[S > 1] /= 100
+    # Very few probas are wrong
+    S = np.clip(S, 0, 1)
     run_reconfidence(X, S, y, UUID, task)
 
 
 def run_reconfidence(X, S, y, UUID, task):
     # json_path = get_json_path(task)
+    assert np.all(S >= 0)
+    assert np.all(S <= 1)
 
     idx = np.arange(len(X))
     idx_train_val, idx_test = train_test_split(idx, test_size=0.5, random_state=0)
@@ -938,9 +967,13 @@ def run_reconfidence(X, S, y, UUID, task):
     )
     # gle = GLEstimator(S_train, partitioner1, random_state=0, verbose=10)
     # gle.fit(X_train, y_train, test_data=(X_val, y_val, S_val))
+    # print(S_test)
+    # print(S_test.mean())
+    # print(S_test.max())
     gle = GLEstimator(S_test, partitioner1, random_state=0, verbose=10)
     gle.fit(X_test, y_test)
     metrics_before = gle.metrics()
+    # return
 
     set_latex_font()
     fig, ax = plt.subplots(figsize=(3, 2))
@@ -949,7 +982,7 @@ def run_reconfidence(X, S, y, UUID, task):
     save_fig(fig, str(out_path), ext="pdf", _name="diagram", task=task)
 
     # Fit isotonics
-    partitioner_est = DecisionTreeClassifier(random_state=0, max_leaf_nodes=5)
+    partitioner_est = DecisionTreeClassifier(random_state=0, max_leaf_nodes=8)
     partitioner = glest.Partitioner(
         partitioner_est,
         predict_method="apply",
