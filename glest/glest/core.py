@@ -704,7 +704,7 @@ class GLEstimator:
         GL_ind = self.GL_induced(psr, reduce_bin)
         GL_uncorrected = self.GL_uncorrected(psr, reduce_bin)
         GL_bias = self.GL_bias(psr, reduce_bin)
-        GL = GL_uncorrected - GL_bias - GL_ind
+        GL = np.clip(GL_uncorrected - GL_bias - GL_ind, 0, None)
         CL = self.CL(psr)  # TODO: add support of reduce_bin
         L = self.L(psr)
 
